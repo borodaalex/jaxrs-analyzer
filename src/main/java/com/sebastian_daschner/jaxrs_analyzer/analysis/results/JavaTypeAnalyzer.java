@@ -16,13 +16,13 @@
 
 package com.sebastian_daschner.jaxrs_analyzer.analysis.results;
 
-import com.sebastian_daschner.jaxrs_analyzer.LogProvider;
-import com.sebastian_daschner.jaxrs_analyzer.analysis.utils.JavaUtils;
-import com.sebastian_daschner.jaxrs_analyzer.model.Pair;
-import com.sebastian_daschner.jaxrs_analyzer.model.rest.TypeIdentifier;
-import com.sebastian_daschner.jaxrs_analyzer.model.rest.TypeRepresentation;
-import com.sebastian_daschner.jaxrs_analyzer.model.types.Type;
-import com.sebastian_daschner.jaxrs_analyzer.model.types.Types;
+import static com.sebastian_daschner.jaxrs_analyzer.model.types.Types.COLLECTION;
+
+import java.lang.reflect.Modifier;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import javassist.CtClass;
 import javassist.CtField;
 import javassist.CtMethod;
@@ -32,12 +32,14 @@ import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlTransient;
-import java.lang.reflect.Modifier;
-import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-import static com.sebastian_daschner.jaxrs_analyzer.model.types.Types.COLLECTION;
+import com.sebastian_daschner.jaxrs_analyzer.LogProvider;
+import com.sebastian_daschner.jaxrs_analyzer.analysis.utils.JavaUtils;
+import com.sebastian_daschner.jaxrs_analyzer.model.Pair;
+import com.sebastian_daschner.jaxrs_analyzer.model.rest.TypeIdentifier;
+import com.sebastian_daschner.jaxrs_analyzer.model.rest.TypeRepresentation;
+import com.sebastian_daschner.jaxrs_analyzer.model.types.Type;
+import com.sebastian_daschner.jaxrs_analyzer.model.types.Types;
 
 /**
  * Analyzes a class (usually a POJO) for it's properties and methods.
@@ -105,7 +107,7 @@ class JavaTypeAnalyzer {
 
         final XmlAccessType value = getXmlAccessType(ctClass);
 
-        final List<CtField> relevantFields = Stream.of(ctClass.getDeclaredFields()).filter(f -> isRelevant(f, value)).collect(Collectors.toList());
+        final List<CtField> relevantFields = Stream.of(ctClass.getDeclaredFields()).collect(Collectors.toList());
         final List<CtMethod> relevantGetters = Stream.of(ctClass.getDeclaredMethods()).filter(m -> isRelevant(m, value)).collect(Collectors.toList());
 
         final Map<String, TypeIdentifier> properties = new HashMap<>();
@@ -126,10 +128,10 @@ class JavaTypeAnalyzer {
             properties.putAll(superProperties);
 
             // get class properties
-            Stream.concat(relevantFields.stream().map(f -> mapField(f, type)), relevantGetters.stream().map(g -> mapGetter(g, type)))
+            relevantFields.stream().map(f -> mapField(f, type))
                 .filter(Objects::nonNull).forEach(p -> {
-                properties.put(p.getLeft(), TypeIdentifier.ofType(p.getRight()));
-                analyze(p.getRight());
+                properties.put(p.getLeft(), TypeIdentifier.ofType(p.getRight().getLeft(), p.getRight().getRight()));
+                analyze(p.getRight().getLeft());
             });
         } catch (Exception e) {
             // TODO: more descriptive error
@@ -212,20 +214,33 @@ class JavaTypeAnalyzer {
         return name.startsWith("is") && name.length() > 2 && method.getSignature().endsWith(")Z");
     }
 
-    private static Pair<String, Type> mapField(final CtField field, final Type containedType) {
+    private static Pair<String, Pair<Type, Boolean>> mapField(final CtField field, final Type containedType)
+            {
         final Type type = JavaUtils.getFieldType(field, containedType);
         if (type == null)
             return null;
+                Boolean hasAnnotations = false;
+                try {
+                    hasAnnotations = field.getAnnotations().length > 0;
+                } catch (ClassNotFoundException e) {
+                    hasAnnotations = true;
+                }
 
-        return Pair.of(field.getName(), type);
+                return Pair.of(field.getName(), Pair.of(type, hasAnnotations));
     }
 
-    private static Pair<String, Type> mapGetter(final CtMethod method, final Type containedType) {
+    private static Pair<String, Pair<Type, Boolean>> mapGetter(final CtMethod method, final Type containedType) {
+        Boolean isMandatory = null;
+        try {
+            isMandatory = method.getAnnotations().length > 0;
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+        }
         final Type returnType = JavaUtils.getReturnType(method, containedType);
         if (returnType == null)
             return null;
 
-        return Pair.of(normalizeGetter(method.getName()), returnType);
+        return Pair.of(normalizeGetter(method.getName()), Pair.of(returnType, isMandatory));
     }
 
     /**

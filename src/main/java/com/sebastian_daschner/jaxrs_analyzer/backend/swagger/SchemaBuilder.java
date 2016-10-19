@@ -16,18 +16,21 @@
 
 package com.sebastian_daschner.jaxrs_analyzer.backend.swagger;
 
+import static com.sebastian_daschner.jaxrs_analyzer.backend.ComparatorUtils.mapKeyComparator;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Stream;
+
+import javax.json.Json;
+import javax.json.JsonArrayBuilder;
+import javax.json.JsonObject;
+import javax.json.JsonObjectBuilder;
+
 import com.sebastian_daschner.jaxrs_analyzer.model.Pair;
 import com.sebastian_daschner.jaxrs_analyzer.model.rest.TypeIdentifier;
 import com.sebastian_daschner.jaxrs_analyzer.model.rest.TypeRepresentation;
 import com.sebastian_daschner.jaxrs_analyzer.model.rest.TypeRepresentationVisitor;
-
-import javax.json.Json;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import java.util.HashMap;
-import java.util.Map;
-
-import static com.sebastian_daschner.jaxrs_analyzer.backend.ComparatorUtils.mapKeyComparator;
 
 /**
  * Creates Swagger schema type definitions.
@@ -66,7 +69,7 @@ class SchemaBuilder {
             case NULL:
             case STRING:
                 final JsonObjectBuilder builder = Json.createObjectBuilder();
-                addPrimitive(builder, type);
+                addPrimitive(builder, type, identifier.isMandatory());
                 return builder.build();
         }
 
@@ -114,18 +117,19 @@ class SchemaBuilder {
     }
 
     private void add(final JsonObjectBuilder builder, final TypeRepresentation.ConcreteTypeRepresentation representation) {
-        final SwaggerType type = SwaggerUtils.toSwaggerType(representation.getIdentifier().getType());
+        final TypeIdentifier identifier = representation.getIdentifier();
+        final SwaggerType type = SwaggerUtils.toSwaggerType(identifier.getType());
         switch (type) {
             case BOOLEAN:
             case INTEGER:
             case NUMBER:
             case NULL:
             case STRING:
-                addPrimitive(builder, type);
+                addPrimitive(builder, type, identifier.isMandatory());
                 return;
         }
 
-        addObject(builder, representation.getIdentifier(), representation.getProperties());
+        addObject(builder, identifier, representation.getProperties());
     }
 
     private void addObject(final JsonObjectBuilder builder, final TypeIdentifier identifier, final Map<String, TypeIdentifier> properties) {
@@ -141,13 +145,18 @@ class SchemaBuilder {
 
         final JsonObjectBuilder nestedBuilder = Json.createObjectBuilder();
 
+        final JsonArrayBuilder nestedRequiredFieldsBuilder = Json.createArrayBuilder();
+
         properties.entrySet().stream().sorted(mapKeyComparator()).forEach(e -> nestedBuilder.add(e.getKey(), build(e.getValue())));
-        jsonDefinitions.put(definition, Pair.of(identifier.getName(), Json.createObjectBuilder().add("properties", nestedBuilder).build()));
+        properties.entrySet().stream().sorted(mapKeyComparator()).filter(f-> f.getValue().isMandatory()).forEach(e -> nestedRequiredFieldsBuilder.add(e.getKey()));
+
+        jsonDefinitions.put(definition, Pair.of(identifier.getName(), Json.createObjectBuilder()
+                .add("properties", nestedBuilder).add("required", nestedRequiredFieldsBuilder).build()));
 
         builder.add("$ref", "#/definitions/" + definition).build();
     }
 
-    private void addPrimitive(final JsonObjectBuilder builder, final SwaggerType type) {
+    private void addPrimitive(final JsonObjectBuilder builder, final SwaggerType type, final Boolean mandatory) {
         builder.add("type", type.toString()).build();
     }
 

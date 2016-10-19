@@ -22,10 +22,16 @@ public abstract class TypeIdentifier {
 
     public abstract Type getType();
 
+    public abstract Boolean isMandatory();
+
     public abstract String getName();
 
     public static TypeIdentifier ofType(final Type type) {
         return new JavaTypeIdentifier(type);
+    }
+
+    public static TypeIdentifier ofType(final Type type, final Boolean isMandatory) {
+        return new JavaTypeIdentifier(type, isMandatory);
     }
 
     public static TypeIdentifier ofDynamic() {
@@ -34,15 +40,27 @@ public abstract class TypeIdentifier {
 
     private static class JavaTypeIdentifier extends TypeIdentifier {
         private final Type type;
+        private Boolean mandatory;
 
         public JavaTypeIdentifier(final Type type) {
             Objects.requireNonNull(type);
             this.type = type;
         }
 
+        public JavaTypeIdentifier(Type type, Boolean mandatory) {
+            Objects.requireNonNull(type);
+            this.type = type;
+            this.mandatory = mandatory;
+        }
+
         @Override
         public Type getType() {
             return type;
+        }
+
+        @Override
+        public Boolean isMandatory() {
+            return mandatory;
         }
 
         @Override
@@ -84,6 +102,11 @@ public abstract class TypeIdentifier {
         @Override
         public Type getType() {
             return Types.JSON;
+        }
+
+        @Override
+        public Boolean isMandatory() {
+            return false;
         }
 
         @Override
